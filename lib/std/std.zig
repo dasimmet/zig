@@ -171,6 +171,9 @@ pub const ascii = @import("ascii.zig");
 /// Tar archive format compression/decompression.
 pub const tar = @import("tar.zig");
 
+/// Zip archive format compression/decompression
+pub const zip = @import("zip.zig");
+
 /// Testing allocator, testing assertions, and other helpers for testing code.
 pub const testing = @import("testing.zig");
 

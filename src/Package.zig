@@ -916,6 +916,7 @@ pub const ReadableResource = struct {
                             .@"tar.gz" => try unpackTarballCompressed(allocator, prog_reader, tmp_directory.handle, dep_location_tok, report, std.compress.gzip),
                             .@"tar.xz" => try unpackTarballCompressed(allocator, prog_reader, tmp_directory.handle, dep_location_tok, report, std.compress.xz),
                             .git_pack => try unpackGitPack(allocator, &prog_reader, git.parseOid(rr.path) catch unreachable, tmp_directory.handle, dep_location_tok, report),
+                            .zip => try unpackZip(allocator, prog_reader, tmp_directory.handle, dep_location_tok, report),
                         }
                     } else {
                         // Recursive directory copy.
@@ -966,6 +967,7 @@ pub const ReadableResource = struct {
         @"tar.gz",
         @"tar.xz",
         git_pack,
+        zip,
     };
 
     pub fn getSize(rr: ReadableResource) !?u64 {
@@ -1020,6 +1022,7 @@ pub const ReadableResource = struct {
         if (ascii.endsWithIgnoreCase(file_path, ".tar")) return .tar;
         if (ascii.endsWithIgnoreCase(file_path, ".tar.gz")) return .@"tar.gz";
         if (ascii.endsWithIgnoreCase(file_path, ".tar.xz")) return .@"tar.xz";
+        if (ascii.endsWithIgnoreCase(file_path, ".zig")) return .zip;
         return null;
     }
 
@@ -1282,6 +1285,20 @@ fn fetchAndUnpack(
 
     try all_modules.put(gpa, actual_hex, module);
     return module;
+}
+
+fn unpackZip(gpa: Allocator, reader: anytype, out_dir: fs.Dir, dep_location_tok: std.zig.Ast.TokenIndex, report: Report) !void {
+    _ = report;
+    _ = dep_location_tok;
+    try std.zip.pipeToFileSystem(out_dir, reader, .{
+        .allocator = gpa,
+    });
+    // TODO nice error reporting
+    // report.addErrorWithNotes(notes_len: u32, Manifest.ErrorMessage{
+    //     .msg = "unable to unpack ZIP",
+    //     .off = 0,
+    //     .tok = dep_location_tok
+    //     })
 }
 
 fn unpackTarballCompressed(
