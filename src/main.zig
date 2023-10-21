@@ -117,6 +117,8 @@ const normal_usage =
     \\General Options:
     \\
     \\  -h, --help       Print command-specific usage
+    \\  -C <path>, --chdir <path>
+    \\                   change directory prior to execution
     \\
 ;
 
@@ -7001,6 +7003,7 @@ fn cmdFetch(
     var opt_path_or_url: ?[]const u8 = null;
     var override_global_cache_dir: ?[]const u8 = try EnvVar.ZIG_GLOBAL_CACHE_DIR.get(arena);
     var debug_hash: bool = false;
+    var chdir_path: ?[]const u8 = null;
 
     {
         var i: usize = 0;
@@ -7011,6 +7014,11 @@ fn cmdFetch(
                     const stdout = io.getStdOut().writer();
                     try stdout.writeAll(usage_fetch);
                     return cleanExit();
+                }
+                if (mem.eql(u8, arg, "-C") or mem.eql(u8, arg, "--chdir")) {
+                    i += 1;
+                    chdir_path = args[i];
+                    continue;
                 } else if (mem.eql(u8, arg, "--global-cache-dir")) {
                     if (i + 1 >= args.len) fatal("expected argument after '{s}'", .{arg});
                     i += 1;
@@ -7028,6 +7036,10 @@ fn cmdFetch(
                 opt_path_or_url = arg;
             }
         }
+    }
+
+    if (chdir_path) |cd|  {
+        try std.os.chdir(cd);
     }
 
     const path_or_url = opt_path_or_url orelse fatal("missing url or path parameter", .{});
