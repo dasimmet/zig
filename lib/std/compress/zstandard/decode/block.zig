@@ -13,8 +13,6 @@ const readers = @import("../readers.zig");
 
 const decodeFseTable = @import("fse.zig").decodeFseTable;
 
-const readInt = std.mem.readIntLittle;
-
 pub const Error = error{
     BlockSizeOverMaximum,
     MalformedBlockSize,
@@ -723,7 +721,9 @@ pub fn decodeBlockRingBuffer(
         },
         .rle => {
             if (src.len < 1) return error.MalformedRleBlock;
-            dest.writeSliceAssumeCapacity(src[0..block_size]);
+            for (0..block_size) |_| {
+                dest.writeAssumeCapacity(src[0]);
+            }
             consumed_count.* += 1;
             decode_state.written_count += block_size;
             return block_size;
@@ -1031,9 +1031,9 @@ fn decodeStreams(size_format: u2, stream_data: []const u8) !LiteralsSection.Stre
 
     if (stream_data.len < 6) return error.MalformedLiteralsSection;
 
-    const stream_1_length = @as(usize, readInt(u16, stream_data[0..2]));
-    const stream_2_length = @as(usize, readInt(u16, stream_data[2..4]));
-    const stream_3_length = @as(usize, readInt(u16, stream_data[4..6]));
+    const stream_1_length: usize = std.mem.readInt(u16, stream_data[0..2], .little);
+    const stream_2_length: usize = std.mem.readInt(u16, stream_data[2..4], .little);
+    const stream_3_length: usize = std.mem.readInt(u16, stream_data[4..6], .little);
 
     const stream_1_start = 6;
     const stream_2_start = stream_1_start + stream_1_length;

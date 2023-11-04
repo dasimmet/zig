@@ -4006,7 +4006,6 @@ fn zirResolveInferredAlloc(sema: *Sema, block: *Block, inst: Zir.Inst.Index) Com
         .inferred_alloc_comptime => {
             const iac = sema.air_instructions.items(.data)[ptr_inst].inferred_alloc_comptime;
             const decl_index = iac.decl_index;
-            try mod.declareDeclDependency(sema.owner_decl_index, decl_index);
 
             const decl = mod.declPtr(decl_index);
             if (iac.is_const) _ = try decl.internValue(mod);
@@ -6411,7 +6410,6 @@ fn lookupInNamespace(
     const namespace_decl_index = namespace.getDeclIndex(mod);
     const namespace_decl = mod.declPtr(namespace_decl_index);
     if (namespace_decl.analysis == .file_failure) {
-        try mod.declareDeclDependency(sema.owner_decl_index, namespace_decl_index);
         return error.AnalysisFail;
     }
 
@@ -6473,7 +6471,6 @@ fn lookupInNamespace(
             0 => {},
             1 => {
                 const decl_index = candidates.items[0];
-                try mod.declareDeclDependency(sema.owner_decl_index, decl_index);
                 return decl_index;
             },
             else => {
@@ -6491,14 +6488,9 @@ fn lookupInNamespace(
             },
         }
     } else if (namespace.decls.getKeyAdapted(ident_name, Module.DeclAdapter{ .mod = mod })) |decl_index| {
-        try mod.declareDeclDependency(sema.owner_decl_index, decl_index);
         return decl_index;
     }
 
-    // TODO This dependency is too strong. Really, it should only be a dependency
-    // on the non-existence of `ident_name` in the namespace. We can lessen the number of
-    // outdated declarations by making this dependency more sophisticated.
-    try mod.declareDeclDependency(sema.owner_decl_index, namespace_decl_index);
     return null;
 }
 
@@ -7317,8 +7309,6 @@ fn analyzeCall(
             block.error_return_trace_index,
         );
         defer ics.deinit();
-
-        try mod.declareDeclDependencyType(ics.callee().owner_decl_index, module_fn.owner_decl, .function_body);
 
         var child_block: Block = .{
             .parent = null,
@@ -16856,7 +16846,6 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
                 type_info_ty.getNamespaceIndex(mod).unwrap().?,
                 try ip.getOrPutString(gpa, "Fn"),
             )).?;
-            try mod.declareDeclDependency(sema.owner_decl_index, fn_info_decl_index);
             try sema.ensureDeclAnalyzed(fn_info_decl_index);
             const fn_info_decl = mod.declPtr(fn_info_decl_index);
             const fn_info_ty = fn_info_decl.val.toType();
@@ -16867,7 +16856,6 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
                 fn_info_ty.getNamespaceIndex(mod).unwrap().?,
                 try ip.getOrPutString(gpa, "Param"),
             )).?;
-            try mod.declareDeclDependency(sema.owner_decl_index, param_info_decl_index);
             try sema.ensureDeclAnalyzed(param_info_decl_index);
             const param_info_decl = mod.declPtr(param_info_decl_index);
             const param_info_ty = param_info_decl.val.toType();
@@ -16967,7 +16955,6 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
                 type_info_ty.getNamespaceIndex(mod).unwrap().?,
                 try ip.getOrPutString(gpa, "Int"),
             )).?;
-            try mod.declareDeclDependency(sema.owner_decl_index, int_info_decl_index);
             try sema.ensureDeclAnalyzed(int_info_decl_index);
             const int_info_decl = mod.declPtr(int_info_decl_index);
             const int_info_ty = int_info_decl.val.toType();
@@ -16996,7 +16983,6 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
                 type_info_ty.getNamespaceIndex(mod).unwrap().?,
                 try ip.getOrPutString(gpa, "Float"),
             )).?;
-            try mod.declareDeclDependency(sema.owner_decl_index, float_info_decl_index);
             try sema.ensureDeclAnalyzed(float_info_decl_index);
             const float_info_decl = mod.declPtr(float_info_decl_index);
             const float_info_ty = float_info_decl.val.toType();
@@ -17029,7 +17015,6 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
                     (try sema.getBuiltinType("Type")).getNamespaceIndex(mod).unwrap().?,
                     try ip.getOrPutString(gpa, "Pointer"),
                 )).?;
-                try mod.declareDeclDependency(sema.owner_decl_index, decl_index);
                 try sema.ensureDeclAnalyzed(decl_index);
                 const decl = mod.declPtr(decl_index);
                 break :t decl.val.toType();
@@ -17041,7 +17026,6 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
                     pointer_ty.getNamespaceIndex(mod).unwrap().?,
                     try ip.getOrPutString(gpa, "Size"),
                 )).?;
-                try mod.declareDeclDependency(sema.owner_decl_index, decl_index);
                 try sema.ensureDeclAnalyzed(decl_index);
                 const decl = mod.declPtr(decl_index);
                 break :t decl.val.toType();
@@ -17085,7 +17069,6 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
                     type_info_ty.getNamespaceIndex(mod).unwrap().?,
                     try ip.getOrPutString(gpa, "Array"),
                 )).?;
-                try mod.declareDeclDependency(sema.owner_decl_index, array_field_ty_decl_index);
                 try sema.ensureDeclAnalyzed(array_field_ty_decl_index);
                 const array_field_ty_decl = mod.declPtr(array_field_ty_decl_index);
                 break :t array_field_ty_decl.val.toType();
@@ -17117,7 +17100,6 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
                     type_info_ty.getNamespaceIndex(mod).unwrap().?,
                     try ip.getOrPutString(gpa, "Vector"),
                 )).?;
-                try mod.declareDeclDependency(sema.owner_decl_index, vector_field_ty_decl_index);
                 try sema.ensureDeclAnalyzed(vector_field_ty_decl_index);
                 const vector_field_ty_decl = mod.declPtr(vector_field_ty_decl_index);
                 break :t vector_field_ty_decl.val.toType();
@@ -17147,7 +17129,6 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
                     type_info_ty.getNamespaceIndex(mod).unwrap().?,
                     try ip.getOrPutString(gpa, "Optional"),
                 )).?;
-                try mod.declareDeclDependency(sema.owner_decl_index, optional_field_ty_decl_index);
                 try sema.ensureDeclAnalyzed(optional_field_ty_decl_index);
                 const optional_field_ty_decl = mod.declPtr(optional_field_ty_decl_index);
                 break :t optional_field_ty_decl.val.toType();
@@ -17175,7 +17156,6 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
                     type_info_ty.getNamespaceIndex(mod).unwrap().?,
                     try ip.getOrPutString(gpa, "Error"),
                 )).?;
-                try mod.declareDeclDependency(sema.owner_decl_index, set_field_ty_decl_index);
                 try sema.ensureDeclAnalyzed(set_field_ty_decl_index);
                 const set_field_ty_decl = mod.declPtr(set_field_ty_decl_index);
                 break :t set_field_ty_decl.val.toType();
@@ -17274,7 +17254,6 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
                     type_info_ty.getNamespaceIndex(mod).unwrap().?,
                     try ip.getOrPutString(gpa, "ErrorUnion"),
                 )).?;
-                try mod.declareDeclDependency(sema.owner_decl_index, error_union_field_ty_decl_index);
                 try sema.ensureDeclAnalyzed(error_union_field_ty_decl_index);
                 const error_union_field_ty_decl = mod.declPtr(error_union_field_ty_decl_index);
                 break :t error_union_field_ty_decl.val.toType();
@@ -17305,7 +17284,6 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
                     type_info_ty.getNamespaceIndex(mod).unwrap().?,
                     try ip.getOrPutString(gpa, "EnumField"),
                 )).?;
-                try mod.declareDeclDependency(sema.owner_decl_index, enum_field_ty_decl_index);
                 try sema.ensureDeclAnalyzed(enum_field_ty_decl_index);
                 const enum_field_ty_decl = mod.declPtr(enum_field_ty_decl_index);
                 break :t enum_field_ty_decl.val.toType();
@@ -17390,7 +17368,6 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
                     type_info_ty.getNamespaceIndex(mod).unwrap().?,
                     try ip.getOrPutString(gpa, "Enum"),
                 )).?;
-                try mod.declareDeclDependency(sema.owner_decl_index, type_enum_ty_decl_index);
                 try sema.ensureDeclAnalyzed(type_enum_ty_decl_index);
                 const type_enum_ty_decl = mod.declPtr(type_enum_ty_decl_index);
                 break :t type_enum_ty_decl.val.toType();
@@ -17423,7 +17400,6 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
                     type_info_ty.getNamespaceIndex(mod).unwrap().?,
                     try ip.getOrPutString(gpa, "Union"),
                 )).?;
-                try mod.declareDeclDependency(sema.owner_decl_index, type_union_ty_decl_index);
                 try sema.ensureDeclAnalyzed(type_union_ty_decl_index);
                 const type_union_ty_decl = mod.declPtr(type_union_ty_decl_index);
                 break :t type_union_ty_decl.val.toType();
@@ -17436,7 +17412,6 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
                     type_info_ty.getNamespaceIndex(mod).unwrap().?,
                     try ip.getOrPutString(gpa, "UnionField"),
                 )).?;
-                try mod.declareDeclDependency(sema.owner_decl_index, union_field_ty_decl_index);
                 try sema.ensureDeclAnalyzed(union_field_ty_decl_index);
                 const union_field_ty_decl = mod.declPtr(union_field_ty_decl_index);
                 break :t union_field_ty_decl.val.toType();
@@ -17531,7 +17506,6 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
                     (try sema.getBuiltinType("Type")).getNamespaceIndex(mod).unwrap().?,
                     try ip.getOrPutString(gpa, "ContainerLayout"),
                 )).?;
-                try mod.declareDeclDependency(sema.owner_decl_index, decl_index);
                 try sema.ensureDeclAnalyzed(decl_index);
                 const decl = mod.declPtr(decl_index);
                 break :t decl.val.toType();
@@ -17565,7 +17539,6 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
                     type_info_ty.getNamespaceIndex(mod).unwrap().?,
                     try ip.getOrPutString(gpa, "Struct"),
                 )).?;
-                try mod.declareDeclDependency(sema.owner_decl_index, type_struct_ty_decl_index);
                 try sema.ensureDeclAnalyzed(type_struct_ty_decl_index);
                 const type_struct_ty_decl = mod.declPtr(type_struct_ty_decl_index);
                 break :t type_struct_ty_decl.val.toType();
@@ -17578,7 +17551,6 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
                     type_info_ty.getNamespaceIndex(mod).unwrap().?,
                     try ip.getOrPutString(gpa, "StructField"),
                 )).?;
-                try mod.declareDeclDependency(sema.owner_decl_index, struct_field_ty_decl_index);
                 try sema.ensureDeclAnalyzed(struct_field_ty_decl_index);
                 const struct_field_ty_decl = mod.declPtr(struct_field_ty_decl_index);
                 break :t struct_field_ty_decl.val.toType();
@@ -17751,7 +17723,6 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
                     (try sema.getBuiltinType("Type")).getNamespaceIndex(mod).unwrap().?,
                     try ip.getOrPutString(gpa, "ContainerLayout"),
                 )).?;
-                try mod.declareDeclDependency(sema.owner_decl_index, decl_index);
                 try sema.ensureDeclAnalyzed(decl_index);
                 const decl = mod.declPtr(decl_index);
                 break :t decl.val.toType();
@@ -17788,7 +17759,6 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
                     type_info_ty.getNamespaceIndex(mod).unwrap().?,
                     try ip.getOrPutString(gpa, "Opaque"),
                 )).?;
-                try mod.declareDeclDependency(sema.owner_decl_index, type_opaque_ty_decl_index);
                 try sema.ensureDeclAnalyzed(type_opaque_ty_decl_index);
                 const type_opaque_ty_decl = mod.declPtr(type_opaque_ty_decl_index);
                 break :t type_opaque_ty_decl.val.toType();
@@ -17832,7 +17802,6 @@ fn typeInfoDecls(
             type_info_ty.getNamespaceIndex(mod).unwrap().?,
             try mod.intern_pool.getOrPutString(gpa, "Declaration"),
         )).?;
-        try mod.declareDeclDependency(sema.owner_decl_index, declaration_ty_decl_index);
         try sema.ensureDeclAnalyzed(declaration_ty_decl_index);
         const declaration_ty_decl = mod.declPtr(declaration_ty_decl_index);
         break :t declaration_ty_decl.val.toType();
@@ -21775,11 +21744,9 @@ fn zirErrorCast(sema: *Sema, block: *Block, extended: Zir.Inst.Extended.InstData
         if (dest_tag == .ErrorUnion) {
             const err_code = try sema.analyzeErrUnionCode(block, operand_src, operand);
             const err_int = try block.addBitCast(err_int_ty, err_code);
-            const zero_u16 = Air.internedToRef(try mod.intern(.{
-                .int = .{ .ty = .u16_type, .storage = .{ .u64 = 0 } },
-            }));
+            const zero_err = try mod.intRef(try mod.errorIntType(), 0);
 
-            const is_zero = try block.addBinOp(.cmp_eq, err_int, zero_u16);
+            const is_zero = try block.addBinOp(.cmp_eq, err_int, zero_err);
             if (disjoint) {
                 // Error must be zero.
                 try sema.addSafetyCheck(block, src, is_zero, .invalid_error_code);
@@ -25239,7 +25206,6 @@ fn zirBuiltinExtern(
         new_decl.generation = mod.generation;
     }
 
-    try mod.declareDeclDependency(sema.owner_decl_index, new_decl_index);
     try sema.ensureDeclAnalyzed(new_decl_index);
 
     return Air.internedToRef((try mod.getCoerced((try mod.intern(.{ .ptr = .{
@@ -26835,7 +26801,7 @@ fn structFieldPtrByIndex(
         // cause miscompilations; it only means the field pointer uses bit masking when it
         // might not be strictly necessary.
         if (parent_align != .none and ptr_ty_data.packed_offset.bit_offset % 8 == 0 and
-            target.cpu.arch.endian() == .Little)
+            target.cpu.arch.endian() == .little)
         {
             const elem_size_bytes = try sema.typeAbiSize(ptr_ty_data.child.toType());
             const elem_size_bits = ptr_ty_data.child.toType().bitSize(mod);
@@ -29684,6 +29650,7 @@ fn storePtrVal(
     try sema.checkComptimeVarStore(block, src, mut_kit.mut_decl);
 
     switch (mut_kit.pointee) {
+        .opv => {},
         .direct => |val_ptr| {
             if (mut_kit.mut_decl.runtime_index == .comptime_field_ptr) {
                 val_ptr.* = (try val_ptr.intern(operand_ty, mod)).toValue();
@@ -29741,6 +29708,7 @@ fn storePtrVal(
 const ComptimePtrMutationKit = struct {
     mut_decl: InternPool.Key.Ptr.Addr.MutDecl,
     pointee: union(enum) {
+        opv,
         /// The pointer type matches the actual comptime Value so a direct
         /// modification is possible.
         direct: *Value,
@@ -29793,6 +29761,7 @@ fn beginComptimePtrMutation(
             const eu_ty = mod.intern_pool.typeOf(eu_ptr).toType().childType(mod);
             var parent = try sema.beginComptimePtrMutation(block, src, eu_ptr.toValue(), eu_ty);
             switch (parent.pointee) {
+                .opv => unreachable,
                 .direct => |val_ptr| {
                     const payload_ty = parent.ty.errorUnionPayload(mod);
                     if (val_ptr.ip_index == .none and val_ptr.tag() == .eu_payload) {
@@ -29835,6 +29804,7 @@ fn beginComptimePtrMutation(
             const opt_ty = mod.intern_pool.typeOf(opt_ptr).toType().childType(mod);
             var parent = try sema.beginComptimePtrMutation(block, src, opt_ptr.toValue(), opt_ty);
             switch (parent.pointee) {
+                .opv => unreachable,
                 .direct => |val_ptr| {
                     const payload_ty = parent.ty.optionalChild(mod);
                     switch (val_ptr.ip_index) {
@@ -29888,16 +29858,30 @@ fn beginComptimePtrMutation(
             var parent = try sema.beginComptimePtrMutation(block, src, elem_ptr.base.toValue(), base_elem_ty);
 
             switch (parent.pointee) {
+                .opv => unreachable,
                 .direct => |val_ptr| switch (parent.ty.zigTypeTag(mod)) {
                     .Array, .Vector => {
+                        const elem_ty = parent.ty.childType(mod);
                         const check_len = parent.ty.arrayLenIncludingSentinel(mod);
+                        if ((try sema.typeHasOnePossibleValue(ptr_elem_ty)) != null) {
+                            if (elem_ptr.index > check_len) {
+                                // TODO have the parent include the decl so we can say "declared here"
+                                return sema.fail(block, src, "comptime store of index {d} out of bounds of array length {d}", .{
+                                    elem_ptr.index, check_len,
+                                });
+                            }
+                            return .{
+                                .mut_decl = parent.mut_decl,
+                                .pointee = .opv,
+                                .ty = elem_ty,
+                            };
+                        }
                         if (elem_ptr.index >= check_len) {
                             // TODO have the parent include the decl so we can say "declared here"
                             return sema.fail(block, src, "comptime store of index {d} out of bounds of array length {d}", .{
                                 elem_ptr.index, check_len,
                             });
                         }
-                        const elem_ty = parent.ty.childType(mod);
 
                         // We might have a pointer to multiple elements of the array (e.g. a pointer
                         // to a sub-array). In this case, we just have to reinterpret the relevant
@@ -30072,6 +30056,7 @@ fn beginComptimePtrMutation(
 
             var parent = try sema.beginComptimePtrMutation(block, src, field_ptr.base.toValue(), base_child_ty);
             switch (parent.pointee) {
+                .opv => unreachable,
                 .direct => |val_ptr| switch (val_ptr.ip_index) {
                     .empty_struct => {
                         const duped = try sema.arena.create(Value);
@@ -30717,8 +30702,8 @@ fn bitCastUnionFieldVal(
             if (field_size > old_size) {
                 const min_size = @max(old_size, 1);
                 switch (endian) {
-                    .Little => @memset(buffer[min_size - 1 ..], 0xaa),
-                    .Big => @memset(buffer[0 .. buffer.len - min_size + 1], 0xaa),
+                    .little => @memset(buffer[min_size - 1 ..], 0xaa),
+                    .big => @memset(buffer[0 .. buffer.len - min_size + 1], 0xaa),
                 }
             }
 
@@ -30727,7 +30712,7 @@ fn bitCastUnionFieldVal(
                 error.ReinterpretDeclRef => return null,
             };
 
-            break :offset if (endian == .Big) buffer.len - field_size else 0;
+            break :offset if (endian == .big) buffer.len - field_size else 0;
         },
         .Auto => unreachable,
     };
@@ -31623,7 +31608,6 @@ fn analyzeDeclRef(sema: *Sema, decl_index: Decl.Index) CompileError!Air.Inst.Ref
 /// this function with `analyze_fn_body` set to true.
 fn analyzeDeclRefInner(sema: *Sema, decl_index: Decl.Index, analyze_fn_body: bool) CompileError!Air.Inst.Ref {
     const mod = sema.mod;
-    try mod.declareDeclDependency(sema.owner_decl_index, decl_index);
     try sema.ensureDeclAnalyzed(decl_index);
 
     const decl = mod.declPtr(decl_index);
@@ -36878,7 +36862,6 @@ fn analyzeComptimeAlloc(
     decl.alignment = alignment;
 
     try sema.comptime_mutable_decls.append(decl_index);
-    try mod.declareDeclDependency(sema.owner_decl_index, decl_index);
     return Air.internedToRef((try mod.intern(.{ .ptr = .{
         .ty = ptr_type.toIntern(),
         .addr = .{ .mut_decl = .{
