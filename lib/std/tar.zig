@@ -77,14 +77,14 @@ pub const Header = struct {
         contiguous = '7',
         global_extended_header = 'g',
         extended_header = 'x',
-        // GNU Tar variants:
+        // GNU Tar header specific types:
         // https://www.gnu.org/software/tar/manual/html_node/Standard.html
-        GNUTYPE_LONGLINK = 'K',
-        GNUTYPE_LONGNAME = 'L',
-        GNUTYPE_MULTIVOL = 'M',
-        GNUTYPE_SPARSE = 'S',
-        GNUTYPE_VOLHDR = 'V',
-        SOLARIS_XHDTYPE = 'X',
+        gnutype_longname = 'L',
+        gnutype_longlink = 'K',
+        gnutype_multivol = 'M',
+        gnutype_sparse = 'S',
+        gnutype_volhdr = 'V',
+        solaris_xhdtype = 'X',
         _,
     };
 
@@ -182,7 +182,7 @@ const Buffer = struct {
     }
 };
 
-pub fn pipeToFileSystem(dir: std.fs.Dir, reader: anytype, options: Options) !void {
+pub fn pipeToFileSystem(dir: std.fs.Dir, reader: std.io.AnyReader, options: Options) !void {
     switch (options.mode_mode) {
         .ignore => {},
         .executable_bit_only => {
@@ -214,6 +214,9 @@ pub fn pipeToFileSystem(dir: std.fs.Dir, reader: anytype, options: Options) !voi
             file_name_buffer[0..file_name_override_len]
         else
             try header.fullFileName(&file_name_buffer);
+        if (file_name_override_len > 0) {
+            std.log.warn("longname: {s}", .{unstripped_file_name});
+        }
         file_name_override_len = 0;
         switch (header.fileType()) {
             .directory => {
@@ -263,27 +266,45 @@ pub fn pipeToFileSystem(dir: std.fs.Dir, reader: anytype, options: Options) !voi
                     }
                 }
             },
-            .GNUTYPE_LONGNAME => {
+            .gnutype_longname => {
                 assert(std.mem.eql(u8, header.name(), "././@LongLink"));
 
-                while (true) {
-                    const filename_chunk = try buffer.readChunk(reader, 512);
-                    switch (filename_chunk.len) {
-                        0 => return,
-                        1...511 => return error.UnexpectedEndOfStream,
-                        else => {},
-                    }
-                    buffer.advance(512);
-                    const chunk_start = file_name_override_len;
+                buffer.advance(@intCast(rounded_file_size));
+                std.log.warn("longname: {}\nparsed: {d}", .{
+                    std.fmt.fmtSliceHexLower(header.bytes[124..][0..12]),
+                    file_size,
+                });
+                if (file_size > std.fs.MAX_PATH_BYTES)
+                    return error.NameTooLong;
+
+                @memcpy(file_name_buffer[file_name_override_len..][0..512], buffer.buffer[buffer.start..][0..512]);
+
+                file_name: while (true) {
+                    const filename_chunk = file_name_buffer[file_name_override_len..][0..512];
+
                     if (std.mem.indexOfScalar(u8, filename_chunk, 0)) |end| {
+                        _ = if (@mod(file_name_override_len, 1024) != 0)
+                            try reader.skipBytes(512, .{});
+
                         file_name_override_len += end;
-                        assert(file_name_override_len < file_name_buffer.len);
-                        @memcpy(file_name_buffer[chunk_start..file_name_override_len], filename_chunk[0..end]);
-                        continue :header;
+                        std.log.warn("file_name: {s}\nlen: {d}", .{
+                            file_name_buffer[0..file_name_override_len],
+                            file_name_override_len,
+                        });
+                        if (file_name_override_len > file_size)
+                            return error.NameHeaderTooShort;
+                        // if (file_name_override_len < file_size)
+                        //     return error.NameTooShort;
+
+                        break :file_name;
                     } else {
-                        file_name_override_len += filename_chunk.len;
-                        assert(file_name_override_len < file_name_buffer.len);
-                        @memcpy(file_name_buffer[chunk_start..file_name_override_len], filename_chunk);
+                        file_name_override_len += 512;
+                    }
+
+                    const filename_chunk_size = try reader.readAll(filename_chunk);
+                    switch (filename_chunk_size) {
+                        0...511 => return error.UnexpectedEndOfStream,
+                        else => {},
                     }
                 }
             },

@@ -1070,7 +1070,7 @@ fn unpackTarballCompressed(
     };
     defer decompress.deinit();
 
-    return unpackTarball(f, out_dir, decompress.reader());
+    return unpackTarball(f, out_dir, decompress.reader().any());
 }
 
 fn unpackTarball(f: *Fetch, out_dir: fs.Dir, reader: anytype) RunError!void {
