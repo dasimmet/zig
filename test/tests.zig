@@ -1168,6 +1168,7 @@ pub fn addModuleTests(b: *std.Build, options: ModuleTestOptions) *Step {
             }
 
             const run = b.addRunArtifact(compile_c);
+            _ = run.getEmittedCoverage(.{.exclude_zig_lib = false});
             run.skip_foreign_checks = true;
             run.enableTestRunnerMode();
             run.setName(b.fmt("run test {s}", .{qualified_name}));
@@ -1175,6 +1176,7 @@ pub fn addModuleTests(b: *std.Build, options: ModuleTestOptions) *Step {
             step.dependOn(&run.step);
         } else {
             const run = b.addRunArtifact(these_tests);
+            _ = run.getEmittedCoverage(.{.exclude_zig_lib = false});
             run.skip_foreign_checks = true;
             run.setName(b.fmt("run test {s}", .{qualified_name}));
 
