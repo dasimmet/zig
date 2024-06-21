@@ -988,7 +988,21 @@ const ModuleTestOptions = struct {
 };
 
 pub fn addModuleTests(b: *std.Build, options: ModuleTestOptions) *Step {
-    const step = b.step(b.fmt("test-{s}", .{options.name}), options.desc);
+    const merge_cov = b.addSystemCommand(&.{
+        "kcov",
+        "--merge",
+    });
+    const step = &merge_cov.step;
+
+    b.installDirectory(.{
+        .install_dir = .{ .custom = "coverage" },
+        .install_subdir = options.name,
+        .source_dir = merge_cov.addOutputDirectoryArg("merge_coverage"),
+    });
+    {
+        const top_step = b.step(b.fmt("test-{s}", .{options.name}), options.desc);
+        top_step.dependOn(step);
+    }
 
     for (test_targets) |test_target| {
         const is_native = test_target.target.isNative() or
@@ -1168,7 +1182,8 @@ pub fn addModuleTests(b: *std.Build, options: ModuleTestOptions) *Step {
             }
 
             const run = b.addRunArtifact(compile_c);
-            _ = run.getEmittedCoverage(.{.exclude_zig_lib = false});
+            const cov_dir = run.getEmittedCoverage(.{ .exclude_zig_lib = false });
+            merge_cov.addDirectoryArg(cov_dir);
             run.skip_foreign_checks = true;
             run.enableTestRunnerMode();
             run.setName(b.fmt("run test {s}", .{qualified_name}));
@@ -1176,7 +1191,8 @@ pub fn addModuleTests(b: *std.Build, options: ModuleTestOptions) *Step {
             step.dependOn(&run.step);
         } else {
             const run = b.addRunArtifact(these_tests);
-            _ = run.getEmittedCoverage(.{.exclude_zig_lib = false});
+            const cov_dir = run.getEmittedCoverage(.{ .exclude_zig_lib = false });
+            merge_cov.addDirectoryArg(cov_dir);
             run.skip_foreign_checks = true;
             run.setName(b.fmt("run test {s}", .{qualified_name}));
 
