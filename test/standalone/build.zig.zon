@@ -18,6 +18,9 @@
         .shared_library = .{
             .path = "shared_library",
         },
+        .my_test = .{
+            .path = "my_test",
+        },
         .mix_o_files = .{
             .path = "mix_o_files",
         },

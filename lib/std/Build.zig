@@ -2040,6 +2040,8 @@ pub fn dependencyFromBuildZig(
     const build_runner = @import("root");
     const deps = build_runner.dependencies;
 
+    std.debug.print("a: {any}, b: {any}\n", .{ @typeInfo(build_zig), @typeInfo(build_runner.root) });
+    std.debug.print("a: {s}, b: {s}\n", .{ @typeName(build_zig), @typeName(build_runner.root) });
     if (build_zig == build_runner.root) {
         return dependencyInner(
             b,
@@ -2149,6 +2151,7 @@ fn dependencyInner(
                 while (options_it.next()) |user_input_option| {
                     if (user_input_options.get(user_input_option.key_ptr.*)) |other_option| {
                         if (!std.mem.eql(u8, std.mem.asBytes(&other_option.value), std.mem.asBytes(&user_input_option.value_ptr.*.value))) {
+                            std.debug.print("NOPE\n", .{});
                             break;
                         }
                     } else break;
