@@ -560,12 +560,12 @@ fn spawnPosix(self: *ChildProcess) SpawnError!void {
         if (any_ignore) posix.close(dev_null_fd);
     }
 
-    const prog_pipe: [2]posix.fd_t = p: {
+    const prog_pipe: std.ipc.Pipe = p: {
         if (self.progress_node.index == .none) {
             break :p .{ -1, -1 };
         } else {
             // We use CLOEXEC for the same reason as in `pipe_flags`.
-            break :p try posix.pipe2(.{ .NONBLOCK = true, .CLOEXEC = true });
+            break :p try std.ipc.pipe();
         }
     };
     errdefer destroyPipe(prog_pipe);
@@ -691,7 +691,7 @@ fn spawnPosix(self: *ChildProcess) SpawnError!void {
     if (prog_pipe[1] != -1) {
         posix.close(prog_pipe[1]);
     }
-    self.progress_node.setIpcFd(prog_pipe[0]);
+    self.progress_node.setIpcHandle(prog_pipe[0]);
 }
 
 fn spawnWindows(self: *ChildProcess) SpawnError!void {

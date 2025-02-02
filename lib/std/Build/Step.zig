@@ -362,7 +362,7 @@ pub fn addError(step: *Step, comptime fmt: []const u8, args: anytype) error{OutO
 pub const ZigProcess = struct {
     child: std.process.Child,
     poller: std.io.Poller(StreamEnum),
-    progress_ipc_fd: if (std.Progress.have_ipc) ?std.posix.fd_t else void,
+    progress_ipc_fd: if (std.Progress.have_ipc) ?std.ipc.Handle else void,
 
     pub const StreamEnum = enum { stdout, stderr };
 };
@@ -377,7 +377,7 @@ pub fn evalZigProcess(
 ) !?Path {
     if (s.getZigProcess()) |zp| update: {
         assert(watch);
-        if (std.Progress.have_ipc) if (zp.progress_ipc_fd) |fd| prog_node.setIpcFd(fd);
+        if (std.Progress.have_ipc) if (zp.progress_ipc_fd) |fd| prog_node.setIpcHandle(fd);
         const result = zigProcessUpdate(s, zp, watch) catch |err| switch (err) {
             error.BrokenPipe => {
                 // Process restart required.
@@ -434,7 +434,7 @@ pub fn evalZigProcess(
             .stdout = child.stdout.?,
             .stderr = child.stderr.?,
         }),
-        .progress_ipc_fd = if (std.Progress.have_ipc) child.progress_node.getIpcFd() else {},
+        .progress_ipc_fd = if (std.Progress.have_ipc) child.progress_node.getIpcHandle() else {},
     };
     if (watch) s.setZigProcess(zp);
     defer if (!watch) zp.poller.deinit();

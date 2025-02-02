@@ -102,8 +102,8 @@ pub const Node = struct {
         }
 
         /// Thread-safe.
-        fn setIpcFd(s: *Storage, fd: posix.fd_t) void {
-            const integer: u32 = switch (@typeInfo(posix.fd_t)) {
+        fn setIpcHandle(s: *Storage, fd: std.ipc.Handle) void {
+            const integer: u32 = switch (@typeInfo(std.ipc.Handle)) {
                 .int => @bitCast(fd),
                 .pointer => @intFromPtr(fd),
                 else => @compileError("unsupported fd_t of " ++ @typeName(posix.fd_t)),
@@ -261,25 +261,28 @@ pub const Node = struct {
     }
 
     /// Posix-only. Used by `std.process.Child`. Thread-safe.
-    pub fn setIpcFd(node: Node, fd: posix.fd_t) void {
+    pub fn setIpcHandle(node: Node, fd: std.ipc.Handle) void {
         const index = node.index.unwrap() orelse return;
         assert(fd >= 0);
         assert(fd != posix.STDOUT_FILENO);
         assert(fd != posix.STDIN_FILENO);
         assert(fd != posix.STDERR_FILENO);
-        storageByIndex(index).setIpcFd(fd);
+        storageByIndex(index).setIpcHandle(fd);
     }
 
     /// Posix-only. Thread-safe. Assumes the node is storing an IPC file
     /// descriptor.
-    pub fn getIpcFd(node: Node) ?posix.fd_t {
+    pub fn getIpcHandle(node: Node) ?std.ipc.Handle {
         const index = node.index.unwrap() orelse return null;
         const storage = storageByIndex(index);
         const int = @atomicLoad(u32, &storage.completed_count, .monotonic);
-        return switch (@typeInfo(posix.fd_t)) {
+        return switch (@typeInfo(std.ipc.Handle)) {
             .int => @bitCast(int),
-            .pointer => @ptrFromInt(int),
-            else => @compileError("unsupported fd_t of " ++ @typeName(posix.fd_t)),
+            .pointer => switch (@sizeOf(usize)) {
+                4 => @ptrFromInt(int),
+                else => @compileError("unsupported ipc handle of " ++ @typeName(std.ipc.Handle)),
+            },
+            else => @compileError("unsupported ipc handle of " ++ @typeName(std.ipc.Handle)),
         };
     }
 
@@ -344,7 +347,7 @@ var default_draw_buffer: [4096]u8 = undefined;
 var debug_start_trace = std.debug.Trace.init;
 
 pub const have_ipc = switch (builtin.os.tag) {
-    .wasi, .freestanding, .windows => false,
+    .wasi, .freestanding, => false,
     else => true,
 };
 
