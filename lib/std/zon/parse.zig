@@ -2106,6 +2106,7 @@ test "std.zon arrays and slices" {
         );
     }
 }
+
 test "std.zon enum as string" {
     const gpa = std.testing.allocator;
     // bare literal
@@ -2129,7 +2130,7 @@ test "std.zon enum as string" {
         const parsed = try fromSlice(struct {
             name: []const u8,
             type: []const u8,
-        }, gpa, ".{.name = .literal_0, .type=.literal_1}", null, .{
+        }, gpa, ".{ .name = .literal_0, .type = .literal_1 }", null, .{
             .enum_literals_as_strings = true,
         });
         defer free(gpa, parsed);
