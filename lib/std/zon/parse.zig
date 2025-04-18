@@ -19,6 +19,19 @@ const StrLitErr = std.zig.string_literal.Error;
 const NumberLiteralError = std.zig.number_literal.Error;
 const assert = std.debug.assert;
 const ArrayListUnmanaged = std.ArrayListUnmanaged;
+pub fn ZonStructHashMap(comptime T: type) type {
+    return struct {
+        pub const Value = T;
+        pub const HashMap = std.StringHashMapUnmanaged(Value);
+        impl: HashMap = .empty,
+    };
+}
+
+pub inline fn isZonStructHashMap(comptime OTHER_T: type) bool {
+    if (@typeInfo(OTHER_T) != .@"struct") return false;
+    if (!@hasDecl(OTHER_T, "Value") or @TypeOf(OTHER_T.Value) != type) return false;
+    return OTHER_T == ZonStructHashMap(OTHER_T.Value);
+}
 
 /// Rename when adding or removing support for a type.
 const valid_types = {};
@@ -388,8 +401,19 @@ pub fn free(gpa: Allocator, value: anytype) void {
         .array => for (value) |item| {
             free(gpa, item);
         },
-        .@"struct" => |@"struct"| inline for (@"struct".fields) |field| {
-            free(gpa, @field(value, field.name));
+        .@"struct" => |@"struct"| {
+            if (isZonStructHashMap(Value)) {
+                var kv_iter = value.impl.iterator();
+                while (kv_iter.next()) |kv| {
+                    free(gpa, kv.key_ptr.*);
+                    free(gpa, kv.value_ptr.*);
+                }
+                @constCast(&value.impl).deinit(gpa);
+                return;
+            }
+            inline for (@"struct".fields) |field| {
+                free(gpa, @field(value, field.name));
+            }
         },
         .@"union" => |@"union"| if (@"union".tag_type == null) {
             if (comptime requiresAllocator(Value)) unreachable;
@@ -413,6 +437,7 @@ fn requiresAllocator(T: type) bool {
         .pointer => true,
         .array => |array| return array.len > 0 and requiresAllocator(array.child),
         .@"struct" => |@"struct"| inline for (@"struct".fields) |field| {
+            if (isZonStructHashMap(T)) break true;
             if (requiresAllocator(field.type)) {
                 break true;
             }
@@ -756,6 +781,10 @@ const Parser = struct {
     }
 
     fn parseStruct(self: *@This(), T: type, node: Zoir.Node.Index) !T {
+        if (isZonStructHashMap(T)) {
+            return self.parseStructHashmap(T, node);
+        }
+
         const repr = node.get(self.zoir);
         const fields: @FieldType(Zoir.Node, "struct_literal") = switch (repr) {
             .struct_literal => |nodes| nodes,
@@ -840,6 +869,27 @@ const Parser = struct {
                     );
                 }
             }
+        }
+
+        return result;
+    }
+
+    fn parseStructHashmap(self: *@This(), T: type, node: Zoir.Node.Index) !T {
+        const repr = node.get(self.zoir);
+        const fields: @FieldType(Zoir.Node, "struct_literal") = switch (repr) {
+            .struct_literal => |nodes| nodes,
+            .empty_literal => .{ .names = &.{}, .vals = .{ .start = node, .len = 0 } },
+            else => return error.WrongType,
+        };
+        var result: T = .{};
+        for (0..fields.names.len) |i| {
+            const name: []const u8 = try self.gpa.dupe(u8, fields.names[i].get(self.zoir)[0..]);
+            const value = try self.parseExpr(
+                T.Value,
+                fields.vals.at(@intCast(i)),
+            );
+
+            try result.impl.put(self.gpa, name, value);
         }
 
         return result;
@@ -1219,6 +1269,9 @@ fn canParseTypeInner(
         .@"struct" => |@"struct"| {
             for (visited) |V| if (T == V) return true;
             const new_visited = visited ++ .{T};
+            if (isZonStructHashMap(T)) {
+                return canParseTypeInner(T.Value, new_visited, false);
+            }
             for (@"struct".fields) |field| {
                 if (!field.is_comptime and !canParseTypeInner(field.type, new_visited, false)) {
                     return false;
