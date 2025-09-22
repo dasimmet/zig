@@ -1181,7 +1181,15 @@ pub const Request = struct {
     /// `aux_buf` must outlive accesses to `Request.uri`.
     fn redirect(r: *Request, head: *const Response.Head, aux_buf: *[]u8) !void {
         const new_location = head.location orelse return error.HttpRedirectLocationMissing;
-        if (new_location.len > aux_buf.*.len) return error.HttpRedirectLocationOversize;
+        std.log.warn("redirect: new_location.len:{} aux_buf.len:{}\nnew_location: {s}", .{
+            new_location.len,
+            aux_buf.*.len,
+            new_location,
+        });
+        if (new_location.len > aux_buf.*.len) {
+            std.debug.dumpCurrentStackTrace(null);
+            return error.HttpRedirectLocationOversize;
+        }
         const location = aux_buf.*[0..new_location.len];
         @memcpy(location, new_location);
         {
