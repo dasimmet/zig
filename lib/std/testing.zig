@@ -8,6 +8,7 @@ const math = std.math;
 pub var random_seed: u32 = 0;
 
 pub const FailingAllocator = @import("testing/FailingAllocator.zig");
+pub const Io = @import("testing/Io.zig");
 pub const failing_allocator = failing_allocator_instance.allocator();
 var failing_allocator_instance = FailingAllocator.init(base_allocator_instance.allocator(), .{
     .fail_index = 0,
@@ -543,6 +544,8 @@ const BytesDiffer = struct {
 };
 
 test {
+    _ = Io;
+    _ = FailingAllocator;
     try expectEqualSlices(u8, "foo\x00", "foo\x00");
     try expectEqualSlices(u16, &[_]u16{ 100, 200, 300, 400 }, &[_]u16{ 100, 200, 300, 400 });
     const E = enum { foo, bar };

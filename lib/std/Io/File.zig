@@ -215,14 +215,14 @@ pub fn openSelfExe(io: Io, flags: OpenFlags) OpenSelfExeError!File {
 
 pub const ReadPositionalError = Reader.Error || error{Unseekable};
 
-pub fn readPositional(file: File, io: Io, buffer: []u8, offset: u64) ReadPositionalError!usize {
+pub fn readPositional(file: File, io: Io, buffer: [][]u8, offset: u64) ReadPositionalError!usize {
     return io.vtable.fileReadPositional(io.userdata, file, buffer, offset);
 }
 
 pub const WriteStreamingError = error{} || Io.UnexpectedError || Io.Cancelable;
 
 pub fn writeStreaming(file: File, io: Io, buffer: [][]const u8) WriteStreamingError!usize {
-    return file.fileWriteStreaming(io, buffer);
+    return io.vtable.fileWriteStreaming(io.userdata, file, buffer);
 }
 
 pub const WritePositionalError = WriteStreamingError || error{Unseekable};
