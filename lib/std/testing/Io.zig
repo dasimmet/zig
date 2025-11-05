@@ -1,9 +1,19 @@
 const std = @import("std");
 const Io = std.Io;
 const assert = std.debug.assert;
+const TestIo = @This();
+const Options = struct {
+    report_leaks: bool = true,
+};
+
+const Result = enum {
+    ok,
+    leak,
+};
 
 gpa: std.mem.Allocator,
 rand: std.Random.DefaultPrng,
+options: Options,
 file: struct {
     const Handle = enum(usize) { _ };
     const File = struct {
@@ -53,10 +63,11 @@ file: struct {
     }
 },
 
-pub fn init() @This() {
-    var self: @This() = .{
+pub fn init(opt: Options) TestIo {
+    var self: TestIo = .{
         .gpa = std.testing.allocator,
         .rand = .init(std.testing.random_seed),
+        .options = opt,
         .file = .{
             .handle = .empty,
             .file = .empty,
@@ -80,10 +91,16 @@ pub fn init() @This() {
     return self;
 }
 
-pub fn deinit(self: *@This()) void {
+pub fn deinit(self: *TestIo) Result {
+    var res: Result = .ok;
+
     for (self.file.handle.items, 0..) |fh, i| {
         if (i == 0) continue;
-        assert(fh == null);
+        if (fh) |fhh| {
+            if (self.options.report_leaks)
+                std.log.err("leaky handle: {d} {} {any}", .{ i, fhh, self.file.file.get(@intFromEnum(fhh)) });
+            res = .leak;
+        }
     }
     self.file.handle.deinit(self.gpa);
     for (self.file.file.items(.path), 0..) |*path, i| {
@@ -91,9 +108,10 @@ pub fn deinit(self: *@This()) void {
         self.file.file.items(.content)[i].deinit(self.gpa);
     }
     self.file.file.deinit(self.gpa);
+    return res;
 }
 
-pub fn io(t: *@This()) Io {
+pub fn io(t: *TestIo) Io {
     return .{
         .userdata = t,
         .vtable = &.{
@@ -152,12 +170,12 @@ pub fn io(t: *@This()) Io {
 }
 
 fn cancelRequested(userdata: ?*anyopaque) bool {
-    const t: *@This() = @ptrCast(@alignCast(userdata));
+    const t: *TestIo = @ptrCast(@alignCast(userdata));
     _ = t;
     return false;
 }
 
-fn checkCancel(t: *@This()) error{Canceled}!void {
+fn checkCancel(t: *TestIo) error{Canceled}!void {
     if (cancelRequested(t)) return error.Canceled;
 }
 
@@ -314,7 +332,7 @@ fn dirMakeOpenPath(
     sub_path: []const u8,
     options: Io.Dir.OpenOptions,
 ) Io.Dir.MakeOpenPathError!Io.Dir {
-    const t: *@This() = @ptrCast(@alignCast(userdata));
+    const t: *TestIo = @ptrCast(@alignCast(userdata));
     _ = options;
     const dir_entry = t.file.get(dir.handle);
     for (t.file.file.items(.parent), t.file.file.items(.path), 0..) |parent, path, i| {
@@ -341,7 +359,7 @@ fn dirMakeOpenPath(
 }
 
 fn dirMakePath(userdata: ?*anyopaque, dir: Io.Dir, sub_path: []const u8, mode: Io.Dir.Mode) Io.Dir.MakeError!void {
-    const t: *@This() = @ptrCast(@alignCast(userdata));
+    const t: *TestIo = @ptrCast(@alignCast(userdata));
     _ = t;
     _ = dir;
     _ = sub_path;
@@ -350,7 +368,7 @@ fn dirMakePath(userdata: ?*anyopaque, dir: Io.Dir, sub_path: []const u8, mode: I
 }
 
 fn dirStat(userdata: ?*anyopaque, dir: Io.Dir) Io.Dir.StatError!Io.Dir.Stat {
-    const t: *@This() = @ptrCast(@alignCast(userdata));
+    const t: *TestIo = @ptrCast(@alignCast(userdata));
     _ = t;
     _ = dir;
     @panic("TODO implement dirStat");
@@ -362,7 +380,7 @@ fn dirStatPath(
     sub_path: []const u8,
     options: Io.Dir.StatPathOptions,
 ) Io.Dir.StatPathError!Io.File.Stat {
-    const t: *@This() = @ptrCast(@alignCast(userdata));
+    const t: *TestIo = @ptrCast(@alignCast(userdata));
     _ = t;
     _ = dir;
     _ = sub_path;
@@ -376,7 +394,7 @@ fn dirAccess(
     sub_path: []const u8,
     options: Io.Dir.AccessOptions,
 ) Io.Dir.AccessError!void {
-    const t: *@This() = @ptrCast(@alignCast(userdata));
+    const t: *TestIo = @ptrCast(@alignCast(userdata));
     _ = t;
     _ = dir;
     _ = sub_path;
@@ -390,7 +408,7 @@ fn dirCreateFile(
     sub_path: []const u8,
     flags: Io.File.CreateFlags,
 ) Io.File.OpenError!Io.File {
-    const t: *@This() = @ptrCast(@alignCast(userdata));
+    const t: *TestIo = @ptrCast(@alignCast(userdata));
     const dir_entry = t.file.get(dir.handle);
     for (t.file.file.items(.parent), t.file.file.items(.path), 0..) |parent, path, i| {
         if (parent == dir_entry[1].parent and std.mem.eql(u8, path.items, sub_path)) {
@@ -421,7 +439,7 @@ fn dirOpenFile(
     sub_path: []const u8,
     flags: Io.File.OpenFlags,
 ) Io.File.OpenError!Io.File {
-    const t: *@This() = @ptrCast(@alignCast(userdata));
+    const t: *TestIo = @ptrCast(@alignCast(userdata));
     _ = t;
     _ = dir;
     _ = sub_path;
@@ -435,7 +453,7 @@ fn dirOpenDir(
     sub_path: []const u8,
     options: Io.Dir.OpenOptions,
 ) Io.Dir.OpenError!Io.Dir {
-    const t: *@This() = @ptrCast(@alignCast(userdata));
+    const t: *TestIo = @ptrCast(@alignCast(userdata));
     _ = t;
     _ = dir;
     _ = sub_path;
@@ -444,7 +462,7 @@ fn dirOpenDir(
 }
 
 fn dirClose(userdata: ?*anyopaque, dir: Io.Dir) void {
-    const t: *@This() = @ptrCast(@alignCast(userdata));
+    const t: *TestIo = @ptrCast(@alignCast(userdata));
     t.file.getHandle(dir.handle).* = null;
 }
 
@@ -455,12 +473,12 @@ fn fileStat(userdata: ?*anyopaque, file: Io.File) Io.File.StatError!Io.File.Stat
 }
 
 fn fileClose(userdata: ?*anyopaque, file: Io.File) void {
-    const t: *@This() = @ptrCast(@alignCast(userdata));
+    const t: *TestIo = @ptrCast(@alignCast(userdata));
     t.file.getHandle(file.handle).* = null;
 }
 
 fn fileWriteStreaming(userdata: ?*anyopaque, file: Io.File, buffer: [][]const u8) Io.File.WriteStreamingError!usize {
-    const t: *@This() = @ptrCast(@alignCast(userdata));
+    const t: *TestIo = @ptrCast(@alignCast(userdata));
     while (true) {
         _ = t;
         // try t.checkCancel();
@@ -476,7 +494,7 @@ fn fileWritePositional(
     buffer: [][]const u8,
     offset: u64,
 ) Io.File.WritePositionalError!usize {
-    const t: *@This() = @ptrCast(@alignCast(userdata));
+    const t: *TestIo = @ptrCast(@alignCast(userdata));
     var acc: usize = 0;
     const content: *std.ArrayList(u8) = t.file.getField(file.handle, .content);
     for (buffer) |buf| {
@@ -497,7 +515,7 @@ fn fileReadStreaming(userdata: ?*anyopaque, file: Io.File, data: [][]u8) Io.File
 }
 
 fn fileReadPositional(userdata: ?*anyopaque, file: Io.File, data: [][]u8, offset: u64) Io.File.ReadPositionalError!usize {
-    const t: *@This() = @ptrCast(@alignCast(userdata));
+    const t: *TestIo = @ptrCast(@alignCast(userdata));
     try t.checkCancel();
     const content = t.file.getField(file.handle, .content);
     const slice = content.items;
@@ -512,7 +530,7 @@ fn fileReadPositional(userdata: ?*anyopaque, file: Io.File, data: [][]u8, offset
 }
 
 fn fileSeekBy(userdata: ?*anyopaque, file: Io.File, offset: i64) Io.File.SeekError!void {
-    const t: *@This() = @ptrCast(@alignCast(userdata));
+    const t: *TestIo = @ptrCast(@alignCast(userdata));
     try t.checkCancel();
 
     _ = file;
@@ -521,7 +539,7 @@ fn fileSeekBy(userdata: ?*anyopaque, file: Io.File, offset: i64) Io.File.SeekErr
 }
 
 fn fileSeekTo(userdata: ?*anyopaque, file: Io.File, offset: u64) Io.File.SeekError!void {
-    const t: *@This() = @ptrCast(@alignCast(userdata));
+    const t: *TestIo = @ptrCast(@alignCast(userdata));
     try t.checkCancel();
     _ = file;
     _ = offset;
@@ -535,7 +553,7 @@ fn openSelfExe(userdata: ?*anyopaque, flags: Io.File.OpenFlags) Io.File.OpenSelf
 }
 
 fn now(userdata: ?*anyopaque, clock: Io.Clock) Io.Clock.Error!Io.Timestamp {
-    const t: *@This() = @ptrCast(@alignCast(userdata));
+    const t: *TestIo = @ptrCast(@alignCast(userdata));
     _ = t;
     _ = clock;
     @panic("TODO implement now");
@@ -691,15 +709,15 @@ fn netLookup(
     _ = host_name;
     _ = options;
     _ = resolved;
-    const t: *@This() = @ptrCast(@alignCast(userdata));
+    const t: *TestIo = @ptrCast(@alignCast(userdata));
     _ = t;
     @panic("TODO implement netLookup");
 }
 
 test "file io interface" {
     const content = "All your base are belong to us!";
-    var testio: @This() = .init();
-    defer testio.deinit();
+    var testio: TestIo = .init(.{});
+    defer _ = testio.deinit();
     const io_instance = testio.io();
 
     const test_dir = try std.Io.Dir.cwd().makeOpenPath(io_instance, "test", .{});
@@ -707,6 +725,36 @@ test "file io interface" {
 
     const fd = try test_dir.createFile(io_instance, "my_open_file", .{ .read = true });
     defer fd.close(io_instance);
+
+    var content_array: [1][]const u8 = .{content};
+    _ = try fd.writePositional(io_instance, &content_array, 0);
+
+    var fd_reader = fd.reader(io_instance, &.{});
+    try fd_reader.seekTo(0);
+    var result: [content.len]u8 = undefined;
+    var result_array: [1][]u8 = .{&result};
+    const result_size = try fd.readPositional(io_instance, &result_array, 0);
+    try std.testing.expectEqual(result_size, content.len);
+    try std.testing.expectEqualSlices(u8, content, &result);
+
+    std.log.info("testing my interface: {any}", .{fd});
+}
+
+test "file io interface - leak handle" {
+    const content = "All your base are belong to us!";
+    var testio: TestIo = .init(.{ .report_leaks = false });
+    defer {
+        const res = testio.deinit();
+        assert(res == .leak);
+    }
+
+    const io_instance = testio.io();
+
+    const test_dir = try std.Io.Dir.cwd().makeOpenPath(io_instance, "test", .{});
+    defer test_dir.close(io_instance);
+
+    const fd = try test_dir.createFile(io_instance, "my_open_file", .{ .read = true });
+    // defer fd.close(io_instance); // here is our leak
 
     var content_array: [1][]const u8 = .{content};
     _ = try fd.writePositional(io_instance, &content_array, 0);
