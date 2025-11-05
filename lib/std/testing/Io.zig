@@ -23,28 +23,28 @@ file: struct {
         return &self.handle.items[fhu];
     }
 
-    fn getField(self: @This(), fh: Io.File.Handle, field: anytype) ?*@FieldType(File, @tagName(field)) {
+    fn getField(self: @This(), fh: Io.File.Handle, field: anytype) *@FieldType(File, @tagName(field)) {
         if (fh == Io.Dir.cwd().handle) {
             return &self.file.items(field)[0];
         }
         const fhu: usize = @intCast(fh);
-        if (self.handle.items.len < fhu) return null;
+        if (self.handle.items.len < fhu) @panic("FileHandleNotFound");
         if (self.handle.items[fhu]) |fnum| {
             return &self.file.items(field)[@intFromEnum(fnum)];
         }
-        return null;
+        @panic("FileHandleClosed");
     }
 
-    fn get(self: @This(), fh: Io.File.Handle) ?struct { Handle, File } {
+    fn get(self: @This(), fh: Io.File.Handle) struct { Handle, File } {
         if (fh == Io.Dir.cwd().handle) {
             return .{ @enumFromInt(0), self.file.get(0) };
         }
         const fhu: usize = @intCast(fh);
-        if (self.handle.items.len < fhu) return null;
+        if (self.handle.items.len < fhu) @panic("FileHandleNotFound");
         if (self.handle.items[fhu]) |fnum| {
             return .{ fnum, self.file.get(@intFromEnum(fnum)) };
         }
-        return null;
+        @panic("FileHandleClosed");
     }
 
     fn newHandle(self: *@This(), gpa: std.mem.Allocator, idx: Handle) Io.File.Handle {
@@ -316,7 +316,7 @@ fn dirMakeOpenPath(
 ) Io.Dir.MakeOpenPathError!Io.Dir {
     const t: *@This() = @ptrCast(@alignCast(userdata));
     _ = options;
-    const dir_entry = t.file.get(dir.handle) orelse @panic("DirHandleClosed");
+    const dir_entry = t.file.get(dir.handle);
     for (t.file.file.items(.parent), t.file.file.items(.path), 0..) |parent, path, i| {
         if (parent == dir_entry[1].parent and std.mem.eql(u8, path.items, sub_path)) {
             assert(t.file.file.items(.stat)[i].kind == .directory);
@@ -391,7 +391,7 @@ fn dirCreateFile(
     flags: Io.File.CreateFlags,
 ) Io.File.OpenError!Io.File {
     const t: *@This() = @ptrCast(@alignCast(userdata));
-    const dir_entry = t.file.get(dir.handle) orelse @panic("DirNotFound");
+    const dir_entry = t.file.get(dir.handle);
     for (t.file.file.items(.parent), t.file.file.items(.path), 0..) |parent, path, i| {
         if (parent == dir_entry[1].parent and std.mem.eql(u8, path.items, sub_path)) {
             assert(t.file.file.items(.stat)[i].kind == .file);
@@ -478,10 +478,11 @@ fn fileWritePositional(
 ) Io.File.WritePositionalError!usize {
     const t: *@This() = @ptrCast(@alignCast(userdata));
     var acc: usize = 0;
-    const content: *std.ArrayList(u8) = t.file.getField(file.handle, .content) orelse @panic("FileNotFound");
+    const content: *std.ArrayList(u8) = t.file.getField(file.handle, .content);
     for (buffer) |buf| {
         const end = offset + acc + buf.len;
-        content.resize(t.gpa, end) catch @panic("OOM");
+        if (end > content.items.len)
+            content.resize(t.gpa, end) catch @panic("OOM");
         @memcpy(content.items[offset + acc .. end], buf);
         acc += buf.len;
     }
@@ -498,7 +499,7 @@ fn fileReadStreaming(userdata: ?*anyopaque, file: Io.File, data: [][]u8) Io.File
 fn fileReadPositional(userdata: ?*anyopaque, file: Io.File, data: [][]u8, offset: u64) Io.File.ReadPositionalError!usize {
     const t: *@This() = @ptrCast(@alignCast(userdata));
     try t.checkCancel();
-    const content = t.file.getField(file.handle, .content) orelse @panic("FileNotFound");
+    const content = t.file.getField(file.handle, .content);
     const slice = content.items;
     var acc: usize = offset;
     for (data) |d| {
