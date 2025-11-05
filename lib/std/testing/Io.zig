@@ -3,7 +3,11 @@ const Io = std.Io;
 
 gpa: std.mem.Allocator,
 file: struct {
-    fd: std.ArrayList(Io.File),
+    const Fd = union(enum) {
+        Dir: Io.Dir,
+        File: Io.File,
+    };
+    idx: std.AutoArrayHashMapUnmanaged(Fd, void),
     stat: std.ArrayList(Io.File.Stat),
 },
 
@@ -11,7 +15,7 @@ pub fn init() @This() {
     return .{
         .gpa = std.testing.allocator,
         .file = .{
-            .fd = .empty,
+            .idx = .empty,
             .stat = .empty,
         },
     };
@@ -242,10 +246,18 @@ fn dirMakeOpenPath(
     sub_path: []const u8,
     options: Io.Dir.OpenOptions,
 ) Io.Dir.MakeOpenPathError!Io.Dir {
-    _ = userdata;
-    _ = dir;
+    const t: *@This() = @ptrCast(@alignCast(userdata));
     _ = sub_path;
     _ = options;
+    const dir_gop = t.file.idx.getOrPut(t.gpa, .{ .Dir = dir }) catch unreachable;
+    if (dir.handle == Io.Dir.cwd().handle) {
+        t.file.stat.append(t.gpa, .{}) catch unreachable;
+    } else {
+        std.debug.assert(dir_gop.found_existing);
+    }
+    const new_fd: Io.File = .{};
+    const file_gop = t.file.idx.getOrPut(t.gpa, .{ .File = new_fd }) catch unreachable;
+    std.debug.assert(file_gop.index == t.file.stat.le)
     @panic("TODO implement dirMakeOpenPath");
 }
 
