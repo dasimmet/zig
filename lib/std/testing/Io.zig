@@ -5,39 +5,92 @@ const assert = std.debug.assert;
 gpa: std.mem.Allocator,
 rand: std.Random.DefaultPrng,
 file: struct {
-    idx: std.AutoArrayHashMapUnmanaged(Io.File.Handle, void),
-    parent: std.ArrayList(?Io.File.Handle),
-    stat: std.ArrayList(Io.File.Stat),
-    path: std.ArrayList(std.ArrayList(u8)),
-    content: std.ArrayList(std.ArrayList(u8)),
+    const Handle = enum(usize) { _ };
+    const File = struct {
+        parent: ?Handle,
+        stat: Io.File.Stat,
+        path: std.ArrayList(u8),
+        content: std.ArrayList(u8),
+    };
+    handle: std.ArrayList(?Handle),
+    file: std.MultiArrayList(File),
+
+    fn getHandle(self: @This(), fh: Io.File.Handle) *?Handle {
+        if (fh == Io.Dir.cwd().handle) {
+            return &self.handle.items[0];
+        }
+        const fhu: usize = @intCast(fh);
+        return &self.handle.items[fhu];
+    }
+
+    fn getField(self: @This(), fh: Io.File.Handle, field: anytype) ?*@FieldType(File, @tagName(field)) {
+        if (fh == Io.Dir.cwd().handle) {
+            return &self.file.items(field)[0];
+        }
+        const fhu: usize = @intCast(fh);
+        if (self.handle.items.len < fhu) return null;
+        if (self.handle.items[fhu]) |fnum| {
+            return &self.file.items(field)[@intFromEnum(fnum)];
+        }
+        return null;
+    }
+
+    fn get(self: @This(), fh: Io.File.Handle) ?struct { Handle, File } {
+        if (fh == Io.Dir.cwd().handle) {
+            return .{ @enumFromInt(0), self.file.get(0) };
+        }
+        const fhu: usize = @intCast(fh);
+        if (self.handle.items.len < fhu) return null;
+        if (self.handle.items[fhu]) |fnum| {
+            return .{ fnum, self.file.get(@intFromEnum(fnum)) };
+        }
+        return null;
+    }
+
+    fn newHandle(self: *@This(), gpa: std.mem.Allocator, idx: Handle) Io.File.Handle {
+        self.handle.append(gpa, idx) catch @panic("OOM");
+        return @intCast(self.handle.items.len - 1);
+    }
 },
 
 pub fn init() @This() {
-    return .{
+    var self: @This() = .{
         .gpa = std.testing.allocator,
         .rand = .init(std.testing.random_seed),
         .file = .{
-            .idx = .empty,
-            .parent = .empty,
-            .stat = .empty,
-            .path = .empty,
-            .content = .empty,
+            .handle = .empty,
+            .file = .empty,
         },
     };
+    self.file.handle.append(self.gpa, @enumFromInt(0)) catch @panic("OOM");
+    self.file.file.append(self.gpa, .{
+        .content = .empty,
+        .path = .initBuffer(self.gpa.dupe(u8, "~") catch @panic("OOM")),
+        .parent = null,
+        .stat = .{
+            .size = 0,
+            .mode = 0o777,
+            .kind = .directory,
+            .inode = self.rand.random().int(@FieldType(Io.File.Stat, "inode")),
+            .mtime = .zero,
+            .ctime = .zero,
+            .atime = .zero,
+        },
+    }) catch @panic("OOM");
+    return self;
 }
 
 pub fn deinit(self: *@This()) void {
-    self.file.stat.deinit(self.gpa);
-    self.file.parent.deinit(self.gpa);
-    self.file.idx.deinit(self.gpa);
-    for (self.file.path.items) |*path| {
+    for (self.file.handle.items, 0..) |fh, i| {
+        if (i == 0) continue;
+        assert(fh == null);
+    }
+    self.file.handle.deinit(self.gpa);
+    for (self.file.file.items(.path), 0..) |*path, i| {
         path.deinit(self.gpa);
+        self.file.file.items(.content)[i].deinit(self.gpa);
     }
-    self.file.path.deinit(self.gpa);
-    for (self.file.content.items) |*content| {
-        content.deinit(self.gpa);
-    }
-    self.file.content.deinit(self.gpa);
+    self.file.file.deinit(self.gpa);
 }
 
 pub fn io(t: *@This()) Io {
@@ -263,51 +316,28 @@ fn dirMakeOpenPath(
 ) Io.Dir.MakeOpenPathError!Io.Dir {
     const t: *@This() = @ptrCast(@alignCast(userdata));
     _ = options;
-    const dir_gop = t.file.idx.getOrPut(t.gpa, dir.handle) catch unreachable;
-    if (dir.handle == Io.Dir.cwd().handle) {
-        if (!dir_gop.found_existing) {
-            t.file.stat.append(t.gpa, .{
-                .size = 0,
-                .mode = 0o777,
-                .kind = .directory,
-                .inode = t.rand.random().int(@FieldType(Io.File.Stat, "inode")),
-                .mtime = .zero,
-                .ctime = .zero,
-                .atime = .zero,
-            }) catch unreachable;
-            var cwd_path = std.ArrayList(u8).initCapacity(t.gpa, 1) catch unreachable;
-            cwd_path.appendBounded('~') catch unreachable;
-            t.file.path.append(t.gpa, cwd_path) catch unreachable;
-            t.file.parent.append(t.gpa, null) catch unreachable;
-            t.file.content.append(t.gpa, .empty) catch unreachable;
+    const dir_entry = t.file.get(dir.handle) orelse @panic("DirHandleClosed");
+    for (t.file.file.items(.parent), t.file.file.items(.path), 0..) |parent, path, i| {
+        if (parent == dir_entry[1].parent and std.mem.eql(u8, path.items, sub_path)) {
+            assert(t.file.file.items(.stat)[i].kind == .directory);
+            return .{ .handle = t.file.newHandle(t.gpa, @enumFromInt(i)) };
         }
-    } else {
-        assert(dir_gop.found_existing);
     }
-    for (t.file.parent.items, t.file.path.items, 0..) |parent, path, i| {
-        if (parent == dir_gop.key_ptr.* and std.mem.eql(u8, path.items, sub_path)) return .{ .handle = t.file.idx.keys()[i] };
-    }
-    const new_fd: Io.Dir = .{ .handle = t.rand.random().int(Io.File.Handle) };
-    const file_gop = t.file.idx.getOrPut(t.gpa, new_fd.handle) catch unreachable;
-    assert(file_gop.index == t.file.stat.items.len);
-    assert(file_gop.index == t.file.path.items.len);
-    assert(file_gop.index == t.file.parent.items.len);
-    assert(file_gop.index == t.file.content.items.len);
-    t.file.stat.append(t.gpa, .{
-        .size = 0,
-        .mode = 0o777,
-        .kind = .directory,
-        .inode = t.rand.random().int(@FieldType(Io.File.Stat, "inode")),
-        .mtime = .zero,
-        .ctime = .zero,
-        .atime = .zero,
-    }) catch unreachable;
-    var path = std.ArrayList(u8).initCapacity(t.gpa, sub_path.len) catch unreachable;
-    path.appendSliceBounded(sub_path) catch unreachable;
-    t.file.path.append(t.gpa, path) catch unreachable;
-    t.file.parent.append(t.gpa, dir_gop.key_ptr.*) catch unreachable;
-    t.file.content.append(t.gpa, .empty) catch unreachable;
-    return new_fd;
+    t.file.file.append(t.gpa, .{
+        .content = .empty,
+        .parent = dir_entry[0],
+        .path = .initBuffer(t.gpa.dupe(u8, sub_path) catch @panic("OOM")),
+        .stat = .{
+            .size = 0,
+            .mode = 0o777,
+            .kind = .directory,
+            .inode = t.rand.random().int(@FieldType(Io.File.Stat, "inode")),
+            .mtime = .zero,
+            .ctime = .zero,
+            .atime = .zero,
+        },
+    }) catch @panic("OOM");
+    return .{ .handle = t.file.newHandle(t.gpa, @enumFromInt(t.file.file.len - 1)) };
 }
 
 fn dirMakePath(userdata: ?*anyopaque, dir: Io.Dir, sub_path: []const u8, mode: Io.Dir.Mode) Io.Dir.MakeError!void {
@@ -361,35 +391,28 @@ fn dirCreateFile(
     flags: Io.File.CreateFlags,
 ) Io.File.OpenError!Io.File {
     const t: *@This() = @ptrCast(@alignCast(userdata));
-    const dir_gop = t.file.idx.getOrPut(t.gpa, dir.handle) catch @panic("OOM");
-    assert(dir_gop.found_existing);
-    for (t.file.parent.items, t.file.path.items, 0..) |parent, path, i| {
-        if (parent == dir_gop.key_ptr.* and std.mem.eql(u8, path.items, sub_path)) {
-            assert(t.file.stat.items[i].kind == .file);
-            return .{ .handle = t.file.idx.keys()[i] };
+    const dir_entry = t.file.get(dir.handle) orelse @panic("DirNotFound");
+    for (t.file.file.items(.parent), t.file.file.items(.path), 0..) |parent, path, i| {
+        if (parent == dir_entry[1].parent and std.mem.eql(u8, path.items, sub_path)) {
+            assert(t.file.file.items(.stat)[i].kind == .file);
+            return .{ .handle = t.file.newHandle(t.gpa, @enumFromInt(i)) };
         }
     }
-    const new_fd: Io.File = .{ .handle = t.rand.random().int(Io.File.Handle) };
-    const file_gop = t.file.idx.getOrPut(t.gpa, new_fd.handle) catch @panic("OOM");
-    assert(file_gop.index == t.file.stat.items.len);
-    assert(file_gop.index == t.file.path.items.len);
-    assert(file_gop.index == t.file.parent.items.len);
-    assert(file_gop.index == t.file.content.items.len);
-    t.file.stat.append(t.gpa, .{
-        .size = 0,
-        .mode = flags.mode,
-        .kind = .file,
-        .inode = t.rand.random().int(@FieldType(Io.File.Stat, "inode")),
-        .mtime = .zero,
-        .ctime = .zero,
-        .atime = .zero,
-    }) catch unreachable;
-    var path = std.ArrayList(u8).initCapacity(t.gpa, sub_path.len) catch @panic("OOM");
-    path.appendSliceBounded(sub_path) catch @panic("OOM");
-    t.file.path.append(t.gpa, path) catch @panic("OOM");
-    t.file.parent.append(t.gpa, dir_gop.key_ptr.*) catch @panic("OOM");
-    t.file.content.append(t.gpa, .empty) catch @panic("OOM");
-    return new_fd;
+    t.file.file.append(t.gpa, .{
+        .content = .empty,
+        .parent = dir_entry[0],
+        .path = .initBuffer(t.gpa.dupe(u8, sub_path) catch @panic("OOM")),
+        .stat = .{
+            .size = 0,
+            .mode = flags.mode,
+            .kind = .file,
+            .inode = t.rand.random().int(@FieldType(Io.File.Stat, "inode")),
+            .mtime = .zero,
+            .ctime = .zero,
+            .atime = .zero,
+        },
+    }) catch @panic("OOM");
+    return .{ .handle = t.file.newHandle(t.gpa, @enumFromInt(t.file.file.len - 1)) };
 }
 
 fn dirOpenFile(
@@ -422,9 +445,7 @@ fn dirOpenDir(
 
 fn dirClose(userdata: ?*anyopaque, dir: Io.Dir) void {
     const t: *@This() = @ptrCast(@alignCast(userdata));
-    _ = t;
-    _ = dir;
-    @panic("TODO implement dirClose");
+    t.file.getHandle(dir.handle).* = null;
 }
 
 fn fileStat(userdata: ?*anyopaque, file: Io.File) Io.File.StatError!Io.File.Stat {
@@ -435,8 +456,7 @@ fn fileStat(userdata: ?*anyopaque, file: Io.File) Io.File.StatError!Io.File.Stat
 
 fn fileClose(userdata: ?*anyopaque, file: Io.File) void {
     const t: *@This() = @ptrCast(@alignCast(userdata));
-    _ = t;
-    _ = file;
+    t.file.getHandle(file.handle).* = null;
 }
 
 fn fileWriteStreaming(userdata: ?*anyopaque, file: Io.File, buffer: [][]const u8) Io.File.WriteStreamingError!usize {
@@ -457,12 +477,12 @@ fn fileWritePositional(
     offset: u64,
 ) Io.File.WritePositionalError!usize {
     const t: *@This() = @ptrCast(@alignCast(userdata));
-    const file_gop = t.file.idx.getOrPut(t.gpa, file.handle) catch @panic("OOM");
-    assert(file_gop.found_existing);
-    const content = &t.file.content.items[file_gop.index];
     var acc: usize = 0;
+    const content: *std.ArrayList(u8) = t.file.getField(file.handle, .content) orelse @panic("FileNotFound");
     for (buffer) |buf| {
-        content.insertSlice(t.gpa, offset + acc, buf) catch @panic("OOM");
+        const end = offset + acc + buf.len;
+        content.resize(t.gpa, end) catch @panic("OOM");
+        @memcpy(content.items[offset + acc .. end], buf);
         acc += buf.len;
     }
     return acc;
@@ -478,9 +498,8 @@ fn fileReadStreaming(userdata: ?*anyopaque, file: Io.File, data: [][]u8) Io.File
 fn fileReadPositional(userdata: ?*anyopaque, file: Io.File, data: [][]u8, offset: u64) Io.File.ReadPositionalError!usize {
     const t: *@This() = @ptrCast(@alignCast(userdata));
     try t.checkCancel();
-    const file_gop = t.file.idx.getOrPut(t.gpa, file.handle) catch @panic("OOM");
-    assert(file_gop.found_existing);
-    const slice = t.file.content.items[file_gop.index].items;
+    const content = t.file.getField(file.handle, .content) orelse @panic("FileNotFound");
+    const slice = content.items;
     var acc: usize = offset;
     for (data) |d| {
         const end = offset + d.len;
@@ -683,6 +702,8 @@ test "file io interface" {
     const io_instance = testio.io();
 
     const test_dir = try std.Io.Dir.cwd().makeOpenPath(io_instance, "test", .{});
+    defer test_dir.close(io_instance);
+
     const fd = try test_dir.createFile(io_instance, "my_open_file", .{ .read = true });
     defer fd.close(io_instance);
 
