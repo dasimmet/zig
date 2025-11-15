@@ -2532,7 +2532,7 @@ const fileReadStreaming = switch (native_os) {
     else => fileReadStreamingPosix,
 };
 
-fn fileReadStreamingPosix(userdata: ?*anyopaque, file: Io.File, data: [][]u8) Io.File.Reader.Error!usize {
+fn fileReadStreamingPosix(userdata: ?*anyopaque, file: Io.File, data: []const []u8) Io.File.Reader.Error!usize {
     const t: *Threaded = @ptrCast(@alignCast(userdata));
 
     var iovecs_buffer: [max_iovecs_len]posix.iovec = undefined;
@@ -2598,7 +2598,7 @@ fn fileReadStreamingPosix(userdata: ?*anyopaque, file: Io.File, data: [][]u8) Io
     }
 }
 
-fn fileReadStreamingWindows(userdata: ?*anyopaque, file: Io.File, data: [][]u8) Io.File.Reader.Error!usize {
+fn fileReadStreamingWindows(userdata: ?*anyopaque, file: Io.File, data: []const []u8) Io.File.Reader.Error!usize {
     const t: *Threaded = @ptrCast(@alignCast(userdata));
 
     const DWORD = windows.DWORD;
@@ -2626,7 +2626,7 @@ fn fileReadStreamingWindows(userdata: ?*anyopaque, file: Io.File, data: [][]u8) 
     }
 }
 
-fn fileReadPositionalPosix(userdata: ?*anyopaque, file: Io.File, data: [][]u8, offset: u64) Io.File.ReadPositionalError!usize {
+fn fileReadPositionalPosix(userdata: ?*anyopaque, file: Io.File, data: []const []u8, offset: u64) Io.File.ReadPositionalError!usize {
     const t: *Threaded = @ptrCast(@alignCast(userdata));
 
     if (!have_preadv) @compileError("TODO");
@@ -2706,7 +2706,7 @@ const fileReadPositional = switch (native_os) {
     else => fileReadPositionalPosix,
 };
 
-fn fileReadPositionalWindows(userdata: ?*anyopaque, file: Io.File, data: [][]u8, offset: u64) Io.File.ReadPositionalError!usize {
+fn fileReadPositionalWindows(userdata: ?*anyopaque, file: Io.File, data: []const []u8, offset: u64) Io.File.ReadPositionalError!usize {
     const t: *Threaded = @ptrCast(@alignCast(userdata));
 
     const DWORD = windows.DWORD;
@@ -2839,7 +2839,7 @@ fn openSelfExe(userdata: ?*anyopaque, flags: Io.File.OpenFlags) Io.File.OpenSelf
 fn fileWritePositional(
     userdata: ?*anyopaque,
     file: Io.File,
-    buffer: [][]const u8,
+    buffer: []const []const u8,
     offset: u64,
 ) Io.File.WritePositionalError!usize {
     const t: *Threaded = @ptrCast(@alignCast(userdata));
@@ -2852,7 +2852,7 @@ fn fileWritePositional(
     }
 }
 
-fn fileWriteStreaming(userdata: ?*anyopaque, file: Io.File, buffer: [][]const u8) Io.File.WriteStreamingError!usize {
+fn fileWriteStreaming(userdata: ?*anyopaque, file: Io.File, buffer: []const []const u8) Io.File.WriteStreamingError!usize {
     const t: *Threaded = @ptrCast(@alignCast(userdata));
     while (true) {
         try t.checkCancel();
